@@ -147,6 +147,21 @@ def add_paragraph_breaks(text: Optional[str]) -> Optional[str]:
     return "\n\n".join(text.split("\n"))
 
 
+def normalize_math_text(text: str) -> str:
+    replacements = {
+        "≤": "\\leq",
+        "≥": "\\geq",
+        "≠": "\\neq",
+        "±": "\\pm",
+        "×": "\\times",
+        "÷": "\\div",
+        "·": "\\cdot",
+        "⋅": "\\cdot",
+    }
+    translation = {ord(src): repl for src, repl in replacements.items()}
+    return text.translate(translation)
+
+
 def clean_html_content(
     tag: Optional[Tag],
     skip_classes: Optional[Set[str]] = None,
@@ -226,7 +241,8 @@ def clean_html_content(
     while lines and lines[-1] == "":
         lines.pop()
     cleaned = "\n".join(lines).strip()
-    return cleaned or None
+    normalized = normalize_math_text(cleaned)
+    return normalized or None
 
 
 @dataclass
