@@ -365,11 +365,42 @@ def upload_problem(
     polygon_name: str,
     lang: str,
     commit_message: Optional[str],
+    existing_problems: Optional[Dict[str, int]] = None,
 ) -> None:
-    print(f"Creating problem {polygon_name} for '{statement.original_title}'")
-    problem_info = client.call("problem.create", {"name": polygon_name})
-    problem_id = problem_info.get("id")
-    print(f"[Polygon] Created problem id={problem_id} for {polygon_name}")
+    problem_id = None
+    if existing_problems:
+        problem_id = existing_problems.get(polygon_name)
+        if problem_id:
+            print(f"[Polygon] Reusing existing problem id={problem_id} for {polygon_name}")
+
+    if problem_id is None:
+        print(f"Creating problem {polygon_name} for '{statement.original_title}'")
+        try:
+            problem_info = client.call("problem.create", {"name": polygon_name})
+            problem_id = problem_info.get("id")
+            print(f"[Polygon] Created problem id={problem_id} for {polygon_name}")
+            if existing_problems is not None:
+                existing_problems[polygon_name] = problem_id
+        except PolygonClientError as exc:
+            print(f"[Polygon] Failed to create {polygon_name}: {exc}")
+            try:
+                problem_list = client.call("problems.list")
+            except PolygonClientError as list_exc:
+                raise PolygonClientError(
+                    f"Failed to create and locate existing problem {polygon_name}: {list_exc}"
+                ) from exc
+
+            for problem in problem_list:
+                if problem.get("name") == polygon_name:
+                    problem_id = problem.get("id")
+                    print(
+                        f"[Polygon] Found existing problem id={problem_id} for {polygon_name} after creation failure"
+                    )
+                    if existing_problems is not None:
+                        existing_problems[polygon_name] = problem_id
+                    break
+            else:
+                raise
 
     update_params: Dict[str, str] = {"problemId": problem_id}
     if statement.time_limit_ms is not None:
@@ -471,9 +502,27 @@ def main() -> None:
     if not statements:
         raise SystemExit("No problem statements found in the HTML file")
 
+    try:
+        existing_problems_list = client.call("problems.list")
+        existing_problems = {problem.get("name"): problem.get("id") for problem in existing_problems_list}
+    except PolygonClientError as exc:
+        print(f"[Polygon] Failed to fetch existing problems: {exc}")
+        existing_problems = {}
+
     for idx, statement in enumerate(statements):
         polygon_name = f"{args.prefix}-{suffix_from_index(idx)}"
-        upload_problem(client, statement, polygon_name, args.lang, args.commit_message)
+        try:
+            upload_problem(
+                client,
+                statement,
+                polygon_name,
+                args.lang,
+                args.commit_message,
+                existing_problems,
+            )
+        except PolygonClientError as exc:
+            print(f"[Polygon] Error uploading {polygon_name}: {exc}")
+            continue
 
 
 if __name__ == "__main__":
