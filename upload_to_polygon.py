@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import requests
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup, NavigableString, Tag
 
 
 class PolygonClientError(Exception):
@@ -90,18 +90,59 @@ def parse_memory_limit(text: str) -> Optional[int]:
     return None
 
 
-def extract_html(tag: Optional[Tag]) -> Optional[str]:
-    if not tag:
-        return None
-    content = tag.decode_contents().strip()
-    return content or None
-
-
 def extract_pre_text(tag: Optional[Tag]) -> str:
     if not tag:
         return ""
     text = tag.get_text("\n", strip=False)
     return text.replace("\r", "").strip("\n")
+
+
+def has_tex_marker(tag: Tag) -> bool:
+    for value in tag.attrs.values():
+        if isinstance(value, list):
+            if any("tex" in str(item).lower() for item in value):
+                return True
+        elif isinstance(value, str) and "tex" in value.lower():
+            return True
+    return False
+
+
+def clean_html_content(tag: Optional[Tag]) -> Optional[str]:
+    if not tag:
+        return None
+
+    block_tags = {"p", "div", "li", "ul", "ol"}
+
+    def render(node) -> str:
+        if isinstance(node, NavigableString):
+            return str(node)
+        if not isinstance(node, Tag):
+            return ""
+
+        if node.name == "br":
+            return "\n"
+
+        children_text = "".join(render(child) for child in node.children)
+        content = children_text
+
+        if has_tex_marker(node):
+            stripped = content.strip()
+            if stripped and not (stripped.startswith("$") and stripped.endswith("$")):
+                content = f"${stripped}$"
+            else:
+                content = stripped
+
+        if node.name in block_tags:
+            return content.strip() + "\n"
+
+        return content
+
+    raw_text = "".join(render(child) for child in tag.children)
+    lines = [line.rstrip() for line in raw_text.splitlines()]
+    while lines and lines[-1] == "":
+        lines.pop()
+    cleaned = "\n".join(lines).strip()
+    return cleaned or None
 
 
 @dataclass
@@ -137,10 +178,10 @@ def parse_html_statements(html_path: Path) -> List[ProblemStatement]:
         input_file = header.select_one(".input-file").get_text(" ", strip=True) if header and header.select_one(".input-file") else None
         output_file = header.select_one(".output-file").get_text(" ", strip=True) if header and header.select_one(".output-file") else None
 
-        legend_html = extract_html(statement.select_one(".legend"))
-        input_html = extract_html(statement.select_one(".input-specification"))
-        output_html = extract_html(statement.select_one(".output-specification"))
-        note_html = extract_html(statement.select_one(".note"))
+        legend_html = clean_html_content(statement.select_one(".legend"))
+        input_html = clean_html_content(statement.select_one(".input-specification"))
+        output_html = clean_html_content(statement.select_one(".output-specification"))
+        note_html = clean_html_content(statement.select_one(".note"))
 
         samples: List[SampleTest] = []
         for sample in statement.select(".sample-test"):
