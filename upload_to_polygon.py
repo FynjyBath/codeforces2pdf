@@ -113,7 +113,7 @@ def clean_html_content(tag: Optional[Tag]) -> Optional[str]:
 
     block_tags = {"p", "div", "li", "ul", "ol"}
 
-    def render(node) -> str:
+    def render(node, in_tex: bool = False) -> str:
         if isinstance(node, NavigableString):
             return str(node)
         if not isinstance(node, Tag):
@@ -122,15 +122,27 @@ def clean_html_content(tag: Optional[Tag]) -> Optional[str]:
         if node.name == "br":
             return "\n"
 
-        children_text = "".join(render(child) for child in node.children)
+        node_is_tex = has_tex_marker(node)
+        current_in_tex = in_tex or node_is_tex
+
+        if node.name in {"sup", "sub"}:
+            marker = "^" if node.name == "sup" else "_"
+            content = "".join(render(child, current_in_tex) for child in node.children)
+            if current_in_tex:
+                return f"{marker}{{{content.strip()}}}"
+            return content
+
+        children_text = "".join(render(child, current_in_tex) for child in node.children)
         content = children_text
 
-        if has_tex_marker(node):
+        if node_is_tex and not in_tex:
             stripped = content.strip()
             if stripped and not (stripped.startswith("$") and stripped.endswith("$")):
                 content = f"${stripped}$"
             else:
                 content = stripped
+        elif node_is_tex:
+            content = content.strip()
 
         if node.name in block_tags:
             return content.strip() + "\n"
