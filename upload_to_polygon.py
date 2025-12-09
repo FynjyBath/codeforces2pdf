@@ -219,6 +219,10 @@ def clean_html_content(
                 return f"{marker}{{{content.strip()}}}"
             return content
 
+        if node.name == "span" and any(cls == "tex-font-style-bf" for cls in classes):
+            bold_content = "".join(render(child, current_in_tex) for child in node.children)
+            return f"\\textbf{{{bold_content}}}" if bold_content.strip() else ""
+
         children_text = "".join(render(child, current_in_tex) for child in node.children)
         content = children_text
 
