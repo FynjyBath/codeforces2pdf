@@ -270,6 +270,25 @@ class ResourceCollector:
             print(f"[Polygon] Warning: failed to read image size: {exc}")
             return None
 
+    def _normalize_image(self, name: str, content: bytes) -> tuple[str, bytes]:
+        supported_formats = {"PNG", "JPEG", "JPG"}
+        try:
+            with Image.open(BytesIO(content)) as image:
+                if (image.format or "").upper() in supported_formats:
+                    return name, content
+
+                buffer = BytesIO()
+                image.save(buffer, format="PNG")
+                normalized_name = str(Path(name).with_suffix(".png"))
+                normalized_content = buffer.getvalue()
+                print(
+                    f"[Polygon] Converted unsupported image format '{image.format}' to PNG: {normalized_name}"
+                )
+                return normalized_name, normalized_content
+        except Exception as exc:
+            print(f"[Polygon] Warning: failed to normalize image '{name}': {exc}")
+            return name, content
+
     def add_image(self, src: Optional[str], *, inline: bool = False) -> Optional[str]:
         if not src:
             return None
@@ -295,15 +314,19 @@ class ResourceCollector:
             name = image_path.name
             content = image_path.read_bytes()
 
+        if content is None:
+            return None
+
+        name, content = self._normalize_image(name, content)
+
         if name not in self._resources and content is not None:
             self._resources[name] = content
 
         include_opts = ""
-        if content is not None:
-            dimensions = self._read_dimensions(content)
-            if dimensions:
-                width, height = dimensions
-                include_opts = f"[bb=0 0 {width} {height}]"
+        dimensions = self._read_dimensions(content)
+        if dimensions:
+            width, height = dimensions
+            include_opts = f"[bb=0 0 {width} {height}]"
 
         if inline:
             return f"\\includegraphics{include_opts}{{{name}}}"
