@@ -246,26 +246,13 @@ class ResourceCollector:
         self.base_dir = base_dir
         self._resources: Dict[str, bytes] = {}
 
-    def _convert_to_jpeg(self, name: str, content: bytes) -> tuple[str, bytes]:
+    def _read_dimensions(self, content: bytes) -> Optional[tuple[int, int]]:
         try:
             with Image.open(BytesIO(content)) as image:
-                if image.mode in {"RGBA", "LA"}:
-                    background = Image.new("RGB", image.size, (255, 255, 255))
-                    background.paste(image.convert("RGBA"), mask=image.getchannel("A"))
-                    converted = background
-                else:
-                    converted = image.convert("RGB")
-
-                buffer = BytesIO()
-                converted.save(buffer, format="JPEG")
-                buffer.seek(0)
-                jpeg_content = buffer.read()
-
-            jpeg_name = Path(name).with_suffix(".jpg").name
-            return jpeg_name, jpeg_content
+                return image.size
         except Exception as exc:
-            print(f"[Polygon] Warning: failed to convert image '{name}' to JPEG: {exc}")
-            return name, content
+            print(f"[Polygon] Warning: failed to read image size: {exc}")
+            return None
 
     def add_image(self, src: Optional[str], *, inline: bool = False) -> Optional[str]:
         if not src:
@@ -292,14 +279,18 @@ class ResourceCollector:
             name = image_path.name
             content = image_path.read_bytes()
 
-        if inline and content is not None:
-            name, content = self._convert_to_jpeg(name, content)
-
         if name not in self._resources and content is not None:
             self._resources[name] = content
 
+        include_opts = ""
+        if inline and content is not None:
+            dimensions = self._read_dimensions(content)
+            if dimensions:
+                width, height = dimensions
+                include_opts = f"[bb=0 0 {width} {height}]"
+
         if inline:
-            return f"\\includegraphics{{{name}}}"
+            return f"\\includegraphics{include_opts}{{{name}}}"
 
         return (
             "\n"
