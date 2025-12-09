@@ -107,6 +107,12 @@ def has_tex_marker(tag: Tag) -> bool:
     return False
 
 
+def add_paragraph_breaks(text: Optional[str]) -> Optional[str]:
+    if text is None:
+        return None
+    return "\n\n".join(text.split("\n"))
+
+
 def clean_html_content(tag: Optional[Tag]) -> Optional[str]:
     if not tag:
         return None
@@ -211,10 +217,10 @@ def parse_html_statements(html_path: Path) -> List[ProblemStatement]:
                     legend_tag = child
                     break
 
-        legend_html = clean_html_content(legend_tag)
-        input_html = clean_html_content(statement.select_one(".input-specification"))
-        output_html = clean_html_content(statement.select_one(".output-specification"))
-        note_html = clean_html_content(statement.select_one(".note"))
+        legend_html = add_paragraph_breaks(clean_html_content(legend_tag))
+        input_html = add_paragraph_breaks(clean_html_content(statement.select_one(".input-specification")))
+        output_html = add_paragraph_breaks(clean_html_content(statement.select_one(".output-specification")))
+        note_html = add_paragraph_breaks(clean_html_content(statement.select_one(".note")))
 
         samples: List[SampleTest] = []
         for sample in statement.select(".sample-test"):
