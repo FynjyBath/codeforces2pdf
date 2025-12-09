@@ -36,7 +36,18 @@ class PolygonClient:
         params = params or {}
         base_params = {"apiKey": self.api_key, "time": int(time.time())}
         full_params = {**params, **base_params}
-        full_params["apiSig"] = self._generate_signature(method, full_params)
+
+        # When uploading files Polygon expects the filename to be part of the signature
+        # calculation. The content itself must not be included.
+        sign_params = dict(full_params)
+        if files:
+            for key, value in files.items():
+                if isinstance(value, (list, tuple)) and value:
+                    sign_params[key] = value[0]
+                else:
+                    sign_params[key] = ""
+
+        full_params["apiSig"] = self._generate_signature(method, sign_params)
         url = f"{self.base_url}/{method}"
         print(f"[Polygon] Calling {method} -> {url}")
         print(f"[Polygon] Parameters: {full_params}")
