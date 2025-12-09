@@ -299,7 +299,7 @@ class ResourceCollector:
             self._resources[name] = content
 
         include_opts = ""
-        if inline and content is not None:
+        if content is not None:
             dimensions = self._read_dimensions(content)
             if dimensions:
                 width, height = dimensions
@@ -311,7 +311,7 @@ class ResourceCollector:
         return (
             "\n"
             "\\begin{center}\n"
-            f"  \\includegraphics{{{name}}}\n"
+            f"  \\includegraphics{include_opts}{{{name}}}\n"
             "\\end{center}\n"
         )
 
