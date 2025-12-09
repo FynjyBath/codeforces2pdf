@@ -24,19 +24,32 @@ class PolygonClient:
         self.secret = secret
         self.base_url = base_url.rstrip("/")
 
-    def _generate_signature(self, method: str, params: Dict[str, str]) -> str:
+    def _generate_signature(
+        self, method: str, params: Dict[str, str], files: Optional[Dict[str, bytes]] = None
+    ) -> str:
         prefix = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
-        ordered = sorted((key, str(value)) for key, value in params.items())
+        signature_params = dict(params)
+        if files:
+            for name, file_info in files.items():
+                filename = file_info[0] if isinstance(file_info, tuple) else name
+                signature_params[name] = filename
+
+        ordered = sorted((key, str(value)) for key, value in signature_params.items())
         payload = "&".join(f"{key}={value}" for key, value in ordered)
         hash_source = f"{prefix}/{method}?{payload}#{self.secret}"
         digest = hashlib.sha512(hash_source.encode("utf-8")).hexdigest()
         return prefix + digest
 
-    def call(self, method: str, params: Optional[Dict[str, str]] = None, files: Optional[Dict[str, bytes]] = None) -> dict:
+    def call(
+        self,
+        method: str,
+        params: Optional[Dict[str, str]] = None,
+        files: Optional[Dict[str, bytes]] = None,
+    ) -> dict:
         params = params or {}
         base_params = {"apiKey": self.api_key, "time": int(time.time())}
         full_params = {**params, **base_params}
-        full_params["apiSig"] = self._generate_signature(method, full_params)
+        full_params["apiSig"] = self._generate_signature(method, full_params, files)
         url = f"{self.base_url}/{method}"
         print(f"[Polygon] Calling {method} -> {url}")
         print(f"[Polygon] Parameters: {full_params}")
