@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 import argparse
 import configparser
 import hashlib
@@ -7,7 +8,7 @@ import string
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Dict, Iterable, List, Optional, Set
 
 import requests
 from bs4 import BeautifulSoup, NavigableString, Tag
@@ -113,7 +114,11 @@ def add_paragraph_breaks(text: Optional[str]) -> Optional[str]:
     return "\n\n".join(text.split("\n"))
 
 
-def clean_html_content(tag: Optional[Tag], skip_classes: Optional[Set[str]] = None) -> Optional[str]:
+def clean_html_content(
+    tag: Optional[Tag],
+    skip_classes: Optional[Set[str]] = None,
+    resource_collector: Optional[ResourceCollector] = None,
+) -> Optional[str]:
     if not tag:
         return None
 
@@ -141,6 +146,15 @@ def clean_html_content(tag: Optional[Tag], skip_classes: Optional[Set[str]] = No
 
         if node.name == "br":
             return "\n"
+
+        if node.name == "img":
+            classes_lower = [cls.lower() for cls in node.get("class", []) if isinstance(cls, str)]
+            src = node.get("src")
+            if any("tex-graphics" in cls for cls in classes_lower) and resource_collector:
+                replacement = resource_collector.add_image(src)
+                if replacement:
+                    return replacement
+            return ""
 
         node_is_tex = has_tex_marker(node)
         current_in_tex = in_tex or node_is_tex
@@ -184,6 +198,42 @@ class SampleTest:
 
 
 @dataclass
+class StatementResource:
+    name: str
+    content: bytes
+
+
+class ResourceCollector:
+    def __init__(self, base_dir: Path) -> None:
+        self.base_dir = base_dir
+        self._resources: Dict[str, bytes] = {}
+
+    def add_image(self, src: Optional[str]) -> Optional[str]:
+        if not src:
+            return None
+
+        image_path = (self.base_dir / Path(src)).resolve()
+        if not image_path.exists():
+            print(f"[Polygon] Warning: image '{src}' not found on disk")
+            return None
+
+        name = image_path.name
+        if name not in self._resources:
+            self._resources[name] = image_path.read_bytes()
+
+        return (
+            "\n"
+            "\\begin{center}\n"
+            f"  \\includegraphics{{{name}}}\n"
+            "\\end{center}\n"
+        )
+
+    def resources(self) -> Iterable[StatementResource]:
+        for name, content in self._resources.items():
+            yield StatementResource(name=name, content=content)
+
+
+@dataclass
 class ProblemStatement:
     original_title: str
     title: str
@@ -196,12 +246,14 @@ class ProblemStatement:
     output_spec_html: Optional[str]
     note_html: Optional[str]
     samples: List[SampleTest]
+    resources: List[StatementResource]
 
 
 def parse_html_statements(html_path: Path) -> List[ProblemStatement]:
     soup = BeautifulSoup(html_path.read_text(encoding="utf-8"), "html.parser")
     statements: List[ProblemStatement] = []
     for statement in soup.select("div.problem-statement"):
+        resources = ResourceCollector(html_path.parent)
         header = statement.select_one(".header")
         title_text = header.select_one(".title").get_text(strip=True) if header else ""
         title_without_index = title_text.split(".", 1)[1].strip() if "." in title_text else title_text
@@ -220,19 +272,19 @@ def parse_html_statements(html_path: Path) -> List[ProblemStatement]:
                     legend_tag = child
                     break
 
-        legend_html = add_paragraph_breaks(clean_html_content(legend_tag))
+        legend_html = add_paragraph_breaks(clean_html_content(legend_tag, resource_collector=resources))
         input_html = add_paragraph_breaks(
             clean_html_content(
-                statement.select_one(".input-specification"), skip_classes={"section-title"}
+                statement.select_one(".input-specification"), skip_classes={"section-title"}, resource_collector=resources
             )
         )
         output_html = add_paragraph_breaks(
             clean_html_content(
-                statement.select_one(".output-specification"), skip_classes={"section-title"}
+                statement.select_one(".output-specification"), skip_classes={"section-title"}, resource_collector=resources
             )
         )
         note_html = add_paragraph_breaks(
-            clean_html_content(statement.select_one(".note"), skip_classes={"section-title"})
+            clean_html_content(statement.select_one(".note"), skip_classes={"section-title"}, resource_collector=resources)
         )
 
         samples: List[SampleTest] = []
@@ -259,6 +311,7 @@ def parse_html_statements(html_path: Path) -> List[ProblemStatement]:
                 output_spec_html=output_html,
                 note_html=note_html,
                 samples=samples,
+                resources=list(resources.resources()),
             )
         )
     return statements
@@ -313,6 +366,14 @@ def upload_problem(
         statement_params["notes"] = statement.note_html
     print("[Polygon] Saving statement...")
     client.call("problem.saveStatement", statement_params)
+
+    for resource in statement.resources:
+        print(f"[Polygon] Uploading statement resource {resource.name}")
+        client.call(
+            "problem.saveStatementResource",
+            {"problemId": problem_id, "name": resource.name},
+            files={"file": (resource.name, resource.content)},
+        )
 
     for index, sample in enumerate(statement.samples, start=1):
         test_params = {
