@@ -9,6 +9,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Set
+from urllib.parse import urlparse
 
 import requests
 from bs4 import BeautifulSoup, NavigableString, Tag
@@ -180,10 +181,15 @@ def clean_html_content(
         if node.name == "img":
             classes_lower = [cls.lower() for cls in node.get("class", []) if isinstance(cls, str)]
             src = node.get("src")
-            if any("tex-graphics" in cls for cls in classes_lower) and resource_collector:
-                replacement = resource_collector.add_image(src)
-                if replacement:
-                    return replacement
+            if resource_collector:
+                if any("tex-graphics" in cls for cls in classes_lower):
+                    replacement = resource_collector.add_image(src)
+                    if replacement:
+                        return replacement
+                if any("tex-formula" in cls for cls in classes_lower):
+                    replacement = resource_collector.add_image(src, inline=True)
+                    if replacement:
+                        return replacement
             return ""
 
         node_is_tex = has_tex_marker(node)
@@ -238,18 +244,36 @@ class ResourceCollector:
         self.base_dir = base_dir
         self._resources: Dict[str, bytes] = {}
 
-    def add_image(self, src: Optional[str]) -> Optional[str]:
+    def add_image(self, src: Optional[str], *, inline: bool = False) -> Optional[str]:
         if not src:
             return None
 
-        image_path = (self.base_dir / Path(src)).resolve()
-        if not image_path.exists():
-            print(f"[Polygon] Warning: image '{src}' not found on disk")
-            return None
+        image_path = None
+        content: Optional[bytes] = None
+        parsed = urlparse(src)
 
-        name = image_path.name
-        if name not in self._resources:
-            self._resources[name] = image_path.read_bytes()
+        if parsed.scheme in {"http", "https"}:
+            name = Path(parsed.path).name or f"image_{len(self._resources) + 1}.png"
+            try:
+                response = requests.get(src)
+                response.raise_for_status()
+            except requests.RequestException as exc:
+                print(f"[Polygon] Warning: failed to download image '{src}': {exc}")
+                return None
+            content = response.content
+        else:
+            image_path = (self.base_dir / Path(src)).resolve()
+            if not image_path.exists():
+                print(f"[Polygon] Warning: image '{src}' not found on disk")
+                return None
+            name = image_path.name
+            content = image_path.read_bytes()
+
+        if name not in self._resources and content is not None:
+            self._resources[name] = content
+
+        if inline:
+            return f"\\includegraphics{{{name}}}"
 
         return (
             "\n"
