@@ -7,11 +7,13 @@ import random
 import string
 import time
 from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Set
 from urllib.parse import urlparse
 
 import requests
+from PIL import Image
 from bs4 import BeautifulSoup, NavigableString, Tag
 
 
@@ -244,6 +246,27 @@ class ResourceCollector:
         self.base_dir = base_dir
         self._resources: Dict[str, bytes] = {}
 
+    def _convert_to_jpeg(self, name: str, content: bytes) -> tuple[str, bytes]:
+        try:
+            with Image.open(BytesIO(content)) as image:
+                if image.mode in {"RGBA", "LA"}:
+                    background = Image.new("RGB", image.size, (255, 255, 255))
+                    background.paste(image.convert("RGBA"), mask=image.getchannel("A"))
+                    converted = background
+                else:
+                    converted = image.convert("RGB")
+
+                buffer = BytesIO()
+                converted.save(buffer, format="JPEG")
+                buffer.seek(0)
+                jpeg_content = buffer.read()
+
+            jpeg_name = Path(name).with_suffix(".jpg").name
+            return jpeg_name, jpeg_content
+        except Exception as exc:
+            print(f"[Polygon] Warning: failed to convert image '{name}' to JPEG: {exc}")
+            return name, content
+
     def add_image(self, src: Optional[str], *, inline: bool = False) -> Optional[str]:
         if not src:
             return None
@@ -268,6 +291,9 @@ class ResourceCollector:
                 return None
             name = image_path.name
             content = image_path.read_bytes()
+
+        if inline and content is not None:
+            name, content = self._convert_to_jpeg(name, content)
 
         if name not in self._resources and content is not None:
             self._resources[name] = content
