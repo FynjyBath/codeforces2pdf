@@ -274,10 +274,8 @@ def upload_problem(
         update_params["timeLimit"] = str(statement.time_limit_ms)
     if statement.memory_limit_mb is not None:
         update_params["memoryLimit"] = str(statement.memory_limit_mb)
-    if statement.input_file:
-        update_params["inputFile"] = statement.input_file
-    if statement.output_file:
-        update_params["outputFile"] = statement.output_file
+    update_params["inputFile"] = "stdin"
+    update_params["outputFile"] = "stdout"
     print(f"[Polygon] Updating problem info with: {update_params}")
     client.call("problem.updateInfo", update_params)
 
