@@ -25,11 +25,29 @@ class PolygonClient:
         self.base_url = base_url.rstrip("/")
 
     def _generate_signature(self, method: str, params: Dict[str, str]) -> str:
-        prefix = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
-        ordered = sorted((key, str(value)) for key, value in params.items())
-        payload = "&".join(f"{key}={value}" for key, value in ordered)
-        hash_source = f"{prefix}/{method}?{payload}#{self.secret}"
-        digest = hashlib.sha512(hash_source.encode("utf-8")).hexdigest()
+        def to_bytes(value) -> bytes:
+            if isinstance(value, bytes):
+                return value
+            if hasattr(value, "read"):
+                position = None
+                try:
+                    position = value.tell()
+                except Exception:
+                    position = None
+                content = value.read()
+                if position is not None:
+                    try:
+                        value.seek(position)
+                    except Exception:
+                        pass
+                return content
+            return str(value).encode("utf-8")
+
+        prefix = "".join(random.choice(string.ascii_lowercase) for _ in range(6))
+        ordered = sorted((str(key).encode("utf-8"), to_bytes(value)) for key, value in params.items())
+        payload = b"&".join(key + b"=" + value for key, value in ordered)
+        hash_source = b"/".join([prefix.encode("utf-8"), method.encode("utf-8") + b"?" + payload]) + b"#" + self.secret.encode("utf-8")
+        digest = hashlib.sha512(hash_source).hexdigest()
         return prefix + digest
 
     def call(self, method: str, params: Optional[Dict[str, str]] = None, files: Optional[Dict[str, bytes]] = None) -> dict:
@@ -37,15 +55,16 @@ class PolygonClient:
         base_params = {"apiKey": self.api_key, "time": int(time.time())}
         full_params = {**params, **base_params}
 
-        # When uploading files Polygon expects the filename to be part of the signature
-        # calculation. The content itself must not be included.
+        # When uploading files Polygon expects the signature to be calculated using the
+        # same values that are posted in the multipart body (including the raw file
+        # content).
         sign_params = dict(full_params)
         if files:
             for key, value in files.items():
-                if isinstance(value, (list, tuple)) and value:
-                    sign_params[key] = value[0]
+                if isinstance(value, (list, tuple)) and len(value) > 1:
+                    sign_params[key] = value[1]
                 else:
-                    sign_params[key] = ""
+                    sign_params[key] = value
 
         full_params["apiSig"] = self._generate_signature(method, sign_params)
         url = f"{self.base_url}/{method}"
