@@ -178,7 +178,17 @@ def parse_html_statements(html_path: Path) -> List[ProblemStatement]:
         input_file = header.select_one(".input-file").get_text(" ", strip=True) if header and header.select_one(".input-file") else None
         output_file = header.select_one(".output-file").get_text(" ", strip=True) if header and header.select_one(".output-file") else None
 
-        legend_html = clean_html_content(statement.select_one(".legend"))
+        legend_tag = statement.select_one(".legend")
+        if legend_tag is None:
+            for child in statement.find_all("div", recursive=False):
+                classes = child.get("class", [])
+                if child.get("class") is None or not set(classes).intersection(
+                    {"header", "input-specification", "output-specification", "sample-tests", "note"}
+                ):
+                    legend_tag = child
+                    break
+
+        legend_html = clean_html_content(legend_tag)
         input_html = clean_html_content(statement.select_one(".input-specification"))
         output_html = clean_html_content(statement.select_one(".output-specification"))
         note_html = clean_html_content(statement.select_one(".note"))
