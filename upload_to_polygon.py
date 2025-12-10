@@ -416,14 +416,16 @@ def parse_html_statements(html_path: Path) -> List[ProblemStatement]:
 
         samples: List[SampleTest] = []
         for sample in statement.select(".sample-test"):
-            input_tag = sample.select_one(".input pre")
-            output_tag = sample.select_one(".output pre")
-            samples.append(
-                SampleTest(
-                    input_text=extract_pre_text(input_tag),
-                    output_text=extract_pre_text(output_tag),
+            input_tags = sample.select(".input pre")
+            output_tags = sample.select(".output pre")
+
+            for input_tag, output_tag in zip(input_tags, output_tags):
+                samples.append(
+                    SampleTest(
+                        input_text=extract_pre_text(input_tag),
+                        output_text=extract_pre_text(output_tag),
+                    )
                 )
-            )
 
         statements.append(
             ProblemStatement(
