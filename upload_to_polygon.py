@@ -274,8 +274,9 @@ def clean_html_content(
             text_content = "".join(render(child, current_in_tex) for child in text_block.children) if text_block else ""
             source_content = "".join(render(child, current_in_tex) for child in source_block.children) if source_block else ""
             source_content_stripped = source_content.strip()
-            source_prefix = "" if source_content_stripped.startswith("---") else "--- " if source_content_stripped else ""
-            combined = f"\\epigraph{{{text_content.strip()}}}{{{source_prefix}{source_content_stripped}}}"
+            cleaned_source = re.sub(r"^[\s\-—–]+", "", source_content_stripped)
+            source_prefix = "--- " if cleaned_source else ""
+            combined = f"\\epigraph{{{text_content.strip()}}}{{{source_prefix}{cleaned_source}}}"
             return combined + "\n"
 
         children_text = "".join(render(child, current_in_tex) for child in node.children)
