@@ -223,6 +223,19 @@ def clean_html_content(
             bold_content = "".join(render(child, current_in_tex) for child in node.children)
             return f"\\textbf{{{bold_content}}}" if bold_content.strip() else ""
 
+        if node.name == "span" and any(cls == "tex-font-style-it" for cls in classes):
+            italic_content = "".join(render(child, current_in_tex) for child in node.children)
+            return f"\\it{{{italic_content}}}" if italic_content.strip() else ""
+
+        if node.name == "div" and any(cls == "epigraph" for cls in classes):
+            text_block = node.select_one(".epigraph-text")
+            source_block = node.select_one(".epigraph-source")
+            text_content = "".join(render(child, current_in_tex) for child in text_block.children) if text_block else ""
+            source_content = "".join(render(child, current_in_tex) for child in source_block.children) if source_block else ""
+            source_prefix = "" if source_content.startswith("---") else "--- " if source_content else ""
+            combined = f"\\epigraph{{{text_content.strip()}}}{{{source_prefix}{source_content.strip()}}}"
+            return combined + "\n"
+
         children_text = "".join(render(child, current_in_tex) for child in node.children)
         content = children_text
 
