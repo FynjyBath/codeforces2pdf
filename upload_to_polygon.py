@@ -291,6 +291,20 @@ def clean_html_content(
         elif node_is_tex:
             content = content.strip()
 
+        if node.name in {"ul", "ol"}:
+            list_items = []
+            item_marker = "itemize" if node.name == "ul" else "enumerate"
+            for item in node.find_all("li", recursive=False):
+                item_content = "".join(render(child, current_in_tex) for child in item.children).strip()
+                if item_content:
+                    list_items.append(f"  \\item {item_content}")
+
+            if not list_items:
+                return ""
+
+            list_body = "\n".join(list_items)
+            return f"\\begin{{{item_marker}}}\n{list_body}\n\\end{{{item_marker}}}\n"
+
         if node.name in block_tags:
             return content.strip() + "\n"
 
